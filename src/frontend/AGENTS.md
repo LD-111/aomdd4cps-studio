@@ -19,7 +19,7 @@ src/frontend/
 │   ├── XmlInputPanel.tsx
 │   ├── XmlOutputPanel.tsx
 │   ├── QuestionnaireModal.tsx
-│         └── DiagramEditor.tsx   # In-app visual reduced diagram editor (SVG canvas + i* palette, drag, connect, label edit; serializes to draw.io XML; fully offline, no external, no raw XML editing)
+│         └── DiagramEditor.tsx   # In-app visual reduced i* editor (SVG canvas + palette, node/edge select+delete links, drag, AND/OR/Dep/Contrib connect, label edit, pillowy softgoal, labeled AND/OR/D edges w/ heads; draw.io XML; offline)
 ├── lib/                    # Shared types, utilities, pure logic (no UI)
 │   └── types.ts            # Mode, Step, future model types (Zod later)
 ├── public/
@@ -73,7 +73,7 @@ When adding features:
 5. Update this `AGENTS.md` (see rule below).
 6. Run `npm run lint && npx tsc --noEmit && npm run build` from `src/frontend/`.
 
-DiagramEditor implements separate full-screen editor view toggled via screen state in page; supports initialXML roundtrip and onApply to feed process seamlessly. In-app visual reduced i* editor using SVG+DOM nodes (palette for actor/goal/task/resource/softgoal/role, sticky click-select with outline, drag, double-click label edit, link buttons enter mode then click source then target, delete). Parses/serializes standard draw.io mxGraph XML. Zero external deps, fully offline. Header updated for navigation tabs.
+DiagramEditor implements separate full-screen editor view toggled via screen state in page; supports initialXML roundtrip and onApply to feed process seamlessly. In-app visual reduced i* editor using SVG+DOM nodes (palette for actor/goal/task/resource/softgoal/role, sticky click-select with outline for nodes/edges, drag nodes, double-click label edit, link buttons for AND/OR Refine/Depends/Contrib enter mode then click source then target, delete selected node or link, Ctrl/Cmd+Z undo, Ctrl/Cmd+Y redo, auto node expand-to-fit label length while preserving min proportions from palette). Actors/roles: label circle attached to resizable dashed ellipse (CIM boundary); drag label/boundary moves whole group (label+boundary+children); resize handles adjust boundary only; drop/drag elements inside auto-assigns parentId with green highlight cue + inset ring on contained nodes; boundaries and parentId computed on load/add/drop; boundaryFor for XML roundtrip (containment editor-only). Edges use center-to-boundary intersections for line endpoints (visible arrowheads/triangles/plus outside targets, no occlusion). Canvas uses explicit content-sized container for scroll + large diagrams + scroll-aware drags. Distinct aesthetics: pillowy softgoals, AND-refinements (AND label + triangle head), OR-refinements (OR label + plus head), dependencies (D label + arrowhead). Parses/serializes standard draw.io mxGraph XML. Zero external deps, fully offline. Header updated for navigation tabs.
 
 ## Nested AGENTS.md Rule (Mandatory)
 
@@ -89,7 +89,7 @@ DiagramEditor implements separate full-screen editor view toggled via screen sta
 
 - Modularized (post initial setup).
 - First-pass modern dark UI with mode switching, DnD, demo questionnaire, mock transform.
-- Separate Diagram Editor screen: in-app visual reduced i* editor (SVG canvas, palette, sticky selection, drag, link-mode source-then-target, label edit) that stays inside tool; parses and emits draw.io XML. No raw XML shown, no external services. Compatible with scratchpads and MDD transforms.
+  - Separate Diagram Editor screen: in-app visual reduced i* editor (SVG canvas, palette for i* elements, node/edge sticky selection+delete, drag, AND/OR/Dep/Contrib link modes source-then-target, label edit, custom aesthetics for softgoal/AND/OR/D edges; actors/roles support resizable dashed boundaries, drag-to-group-move (incl. contents), auto parentId integration on drop with visual cues (green highlight + inset ring)) that stays inside tool; parses and emits draw.io XML. No raw XML shown, no external services. Compatible with scratchpads and MDD transforms.
 - Still demo-only (no real XSLT calls). Diagram Editor is now local/offline XML roundtrip helper (ideal for i* only, independent of external calls).
 - Next: real backend transforms, rule-driven forms, validation panel, per-component previews.
 
