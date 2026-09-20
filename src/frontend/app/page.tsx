@@ -7,7 +7,8 @@ import TransformationControls from '../components/TransformationControls';
 import XmlInputPanel from '../components/XmlInputPanel';
 import XmlOutputPanel from '../components/XmlOutputPanel';
 import QuestionnaireModal from '../components/QuestionnaireModal';
-import { Mode, Step } from '../lib/types';
+import DiagramEditor from '../components/DiagramEditor';
+import { Mode, Step, Screen } from '../lib/types';
 
 const STEPS: Step[] = [
   { id: 1, label: 'Input Model' },
@@ -27,6 +28,8 @@ export default function AOMDDStudio() {
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
   const [questionnaireAnswers, setQuestionnaireAnswers] = useState<Record<string, string>>({});
   const [rulesApplied, setRulesApplied] = useState(false);
+  const [screen, setScreen] = useState<Screen>('process');
+  const [editorInitial, setEditorInitial] = useState('');
 
   const isPsm = mode === 'pim-psm';
 
@@ -150,71 +153,110 @@ export default function AOMDDStudio() {
     setCurrentStep(1);
   };
 
+  const openEditor = () => {
+    setEditorInitial(inputXML);
+    setScreen('editor');
+  };
+
+  const closeEditor = () => {
+    setScreen('process');
+  };
+
+  const applyFromEditor = (xml: string) => {
+    setInputXML(xml);
+    setOutputXML('');
+    setCurrentStep(1);
+    setRulesApplied(false);
+    setScreen('process');
+  };
+
+  const switchScreen = (s: Screen) => {
+    if (s === 'editor') {
+      setEditorInitial(inputXML);
+    }
+    setScreen(s);
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      <Header screen={screen} onSwitch={switchScreen} />
 
-      <div className="px-6 pt-6">
-        <div className="flex items-center justify-between mb-3">
-          <div className="uppercase tracking-[2px] text-xs text-[#9ca3af]">MDD Process</div>
-          <button onClick={clearAll} className="btn btn-secondary text-xs px-3 py-1">Reset</button>
-        </div>
-
-        <ProcessStepper steps={STEPS} currentStep={currentStep} />
-      </div>
-
-      <div className="flex-1 px-6 pb-6 flex gap-4 min-h-0">
-        <TransformationControls
-          mode={mode}
-          setMode={handleModeChange}
-          isPsm={isPsm}
-          platform={platform}
-          setPlatform={setPlatform}
-          commTech={commTech}
-          setCommTech={setCommTech}
-          openQuestionnaire={openQuestionnaire}
-          transform={transform}
-          downloadOutput={downloadOutput}
-          inputXML={inputXML}
-          outputXML={outputXML}
-          rulesApplied={rulesApplied}
-        />
-
-        <div className="flex-1 flex flex-col gap-4 min-h-0">
-          <XmlInputPanel
-            mode={mode}
-            inputXML={inputXML}
-            isDragging={isDragging}
-            onInputChange={setInputXML}
-            onLoadExample={loadExample}
-            onFileSelect={handleFileInput}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onClear={handleInputClear}
-          />
-
-          <XmlOutputPanel
-            mode={mode}
-            outputXML={outputXML}
-            onDownload={downloadOutput}
+      {screen === 'editor' ? (
+        <div className="flex-1 flex flex-col min-h-0">
+          <DiagramEditor
+            initialXML={editorInitial}
+            onApply={applyFromEditor}
+            onBack={closeEditor}
           />
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="px-6 pt-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="uppercase tracking-[2px] text-xs text-[#9ca3af]">MDD Process</div>
+              <div className="flex gap-2">
+                <button onClick={openEditor} className="btn btn-secondary text-xs px-3 py-1">Open Diagram Editor</button>
+                <button onClick={clearAll} className="btn btn-secondary text-xs px-3 py-1">Reset</button>
+              </div>
+            </div>
 
-      {showQuestionnaire && (
-        <QuestionnaireModal
-          mode={mode}
-          answers={questionnaireAnswers}
-          onUpdate={updateAnswer}
-          onSubmit={submitQuestionnaire}
-          onClose={closeQuestionnaire}
-        />
+            <ProcessStepper steps={STEPS} currentStep={currentStep} />
+          </div>
+
+          <div className="flex-1 px-6 pb-6 flex gap-4 min-h-0">
+            <TransformationControls
+              mode={mode}
+              setMode={handleModeChange}
+              isPsm={isPsm}
+              platform={platform}
+              setPlatform={setPlatform}
+              commTech={commTech}
+              setCommTech={setCommTech}
+              openQuestionnaire={openQuestionnaire}
+              transform={transform}
+              downloadOutput={downloadOutput}
+              inputXML={inputXML}
+              outputXML={outputXML}
+              rulesApplied={rulesApplied}
+            />
+
+            <div className="flex-1 flex flex-col gap-4 min-h-0">
+              <XmlInputPanel
+                mode={mode}
+                inputXML={inputXML}
+                isDragging={isDragging}
+                onInputChange={setInputXML}
+                onLoadExample={loadExample}
+                onFileSelect={handleFileInput}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onClear={handleInputClear}
+              />
+
+              <XmlOutputPanel
+                mode={mode}
+                outputXML={outputXML}
+                onDownload={downloadOutput}
+              />
+            </div>
+          </div>
+
+          {showQuestionnaire && (
+            <QuestionnaireModal
+              mode={mode}
+              answers={questionnaireAnswers}
+              onUpdate={updateAnswer}
+              onSubmit={submitQuestionnaire}
+              onClose={closeQuestionnaire}
+            />
+          )}
+
+          <footer className="text-center text-[10px] text-[#9ca3af] py-3 border-t border-[#33334d]">
+            Rebuild of legacy Flask UI. Preserves exact transformation semantics from legacy-src. See AGENTS.md &amp; MDD4CPS docs.
+          </footer>
+        </>
       )}
-
-      <footer className="text-center text-[10px] text-[#9ca3af] py-3 border-t border-[#33334d]">
-        Rebuild of legacy Flask UI. Preserves exact transformation semantics from legacy-src. See AGENTS.md &amp; MDD4CPS docs.
-      </footer>
     </div>
   );
 }

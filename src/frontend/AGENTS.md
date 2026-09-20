@@ -18,7 +18,8 @@ src/frontend/
 │   ├── TransformationControls.tsx
 │   ├── XmlInputPanel.tsx
 │   ├── XmlOutputPanel.tsx
-│   └── QuestionnaireModal.tsx
+│   ├── QuestionnaireModal.tsx
+│         └── DiagramEditor.tsx   # In-app visual reduced diagram editor (SVG canvas + i* palette, drag, connect, label edit; serializes to draw.io XML; fully offline, no external, no raw XML editing)
 ├── lib/                    # Shared types, utilities, pure logic (no UI)
 │   └── types.ts            # Mode, Step, future model types (Zod later)
 ├── public/
@@ -51,7 +52,8 @@ src/frontend/
 ## UI/UX Goals (from root)
 
 - Guided multi-step wizards (current stepper + modal is first iteration).
-- Drag-and-drop + live editing of draw.io XML.
+- Separate Diagram Editor screen (embed path) for full visual i*/PIM editing with direct apply back to process XML.
+- Drag-and-drop + live editing of draw.io XML (raw + visual).
 - Replace one-shot modals with in-context + progressive disclosure.
 - Visual feedback for transformations, future: diff views, progress, undo.
 - Platform selectors, data structure builders, operation mode editors.
@@ -71,6 +73,8 @@ When adding features:
 5. Update this `AGENTS.md` (see rule below).
 6. Run `npm run lint && npx tsc --noEmit && npm run build` from `src/frontend/`.
 
+DiagramEditor implements separate full-screen editor view toggled via screen state in page; supports initialXML roundtrip and onApply to feed process seamlessly. In-app visual reduced i* editor using SVG+DOM nodes (palette for actor/goal/task/resource/softgoal/role, sticky click-select with outline, drag, double-click label edit, link buttons enter mode then click source then target, delete). Parses/serializes standard draw.io mxGraph XML. Zero external deps, fully offline. Header updated for navigation tabs.
+
 ## Nested AGENTS.md Rule (Mandatory)
 
 **Upon ANY change to code or structure in a directory that has (or should have) an AGENTS.md, the respective AGENTS.md file(s) MUST be updated in the same change.**
@@ -85,8 +89,9 @@ When adding features:
 
 - Modularized (post initial setup).
 - First-pass modern dark UI with mode switching, DnD, demo questionnaire, mock transform.
-- Still demo-only (no real XSLT calls).
-- Future: embed diagrams.net, real rule-driven forms using the JSONs in public/input, validation panel, per-component code preview downloads.
+- Separate Diagram Editor screen: in-app visual reduced i* editor (SVG canvas, palette, sticky selection, drag, link-mode source-then-target, label edit) that stays inside tool; parses and emits draw.io XML. No raw XML shown, no external services. Compatible with scratchpads and MDD transforms.
+- Still demo-only (no real XSLT calls). Diagram Editor is now local/offline XML roundtrip helper (ideal for i* only, independent of external calls).
+- Next: real backend transforms, rule-driven forms, validation panel, per-component previews.
 
 See root AGENTS.md Future Development Priorities and UX overhaul items.
 

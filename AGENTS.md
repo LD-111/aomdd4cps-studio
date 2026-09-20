@@ -82,7 +82,7 @@ Key artifacts whose behavior must be reproduced exactly (use legacy-src as oracl
   - Beautiful, guided multi-step wizards replacing crude modals.
   - Real-time transformation feedback, diff views, downloadable artifacts.
   - Platform selector, operation mode editors, data structure builders.
-  - Integrated or embedded diagrams.net editor support (or equivalent visual modeling).
+   - Separate Diagram Editor screen (built-in visual reduced i* editor using SVG canvas + palette/drag/connect/label-edit) for in-app i* / PIM modeling; accessible independently or from process; seamless XML apply back to drive CIM/PIM steps without leaving the app. (Fully offline, no external, no raw XML; compatible with draw.io XML format.)
   - Validation results panel with actionable feedback.
   - Modern UX: dark mode, responsive, accessibility, progress indicators, history/undo for transformations.
 - **Shared**:
@@ -96,6 +96,7 @@ Key artifacts whose behavior must be reproduced exactly (use legacy-src as oracl
 2. **Full automation**: Eliminate the manual "run Python script" step; PSM→Code runs inside the tool and offers multi-platform targets.
 3. **Validation as first-class**: Embed `semantics/` checks before/after each transformation stage with clear reporting.
 4. **Superior UX overhaul** (primary project goal):
+    - Separate in-app Diagram Editor screen (built-in offline visual reduced i* editor) for iStar/PIM diagrams + seamless handoff to MDD process. (No external dependencies.)
    - Visual model explorer.
    - Step-by-step guided process with context-sensitive help.
    - In-browser editing of attributes instead of one-shot modals.
