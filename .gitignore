@@ -33,3 +33,8 @@ dist/
 build/
 output/
 generated_code/
+
+# ─── Next.js frontend (src/frontend) ─────────────────────────────
+src/frontend/.next/
+src/frontend/node_modules/
+src/frontend/out/

@@ -28,6 +28,11 @@ Rebuild the Agent-Oriented Model-Driven Development for Cyber-Physical Systems (
 ├── src/                        # NEW IMPLEMENTATION (FastAPI + Next.js)
 │   ├── backend/
 │   └── frontend/
+│       ├── AGENTS.md           # Frontend-specific: Next.js structure, components, UI conventions (see summary below)
+│       ├── app/
+│       ├── components/         # Modular UI (post-2026-09 refactor)
+│       ├── lib/
+│       └── public/...
 ├── semantics/                  # PRESERVE (validation artifacts)
 │   ├── draw.io_models/
 │   ├── structural_validations/ # OWL + HermiT cases
@@ -133,10 +138,15 @@ This project is licensed under **Creative Commons Attribution-NonCommercial 4.0 
 - When editing docs or adding features, reinforce attribution and process fidelity.
 - For UI work: focus on dramatically better experience than the original minimal Flask templates + basic JS.
 - Update this AGENTS.md when scope, priorities, or architecture decisions evolve.
+- **Nested AGENTS.md rule (mandatory)**: Upon ANY code or structure change in a directory containing (or requiring) an AGENTS.md, update the corresponding AGENTS.md file(s) in the same edit. This applies recursively: root for global, `src/frontend/AGENTS.md` for frontend, future `src/backend/AGENTS.md`, component subdirs, etc. This keeps agent context accurate and efficient.
+
+## Nested AGENTS.md Files
+
+- `src/frontend/AGENTS.md`: Frontend-specific specification for the Next.js implementation. Covers authoritative directory structure (`app/` for routing/orchestration, `components/` for reusable modular UI pieces, `lib/` for shared types), conventions (dark-only Tailwind theme via globals.css, no source comments in .ts/.tsx, prop-driven components, "use client" only where needed), modularization approach (see components: Header, ProcessStepper, TransformationControls, XmlInputPanel, XmlOutputPanel, QuestionnaireModal), wiring in thin `app/page.tsx`, and requirement to keep the file updated on every frontend change. It references the root AGENTS.md for licensing, process fidelity (CIM→PIM etc.), and overall rules. Created to maximize agentic efficiency by providing localized context.
 
 ## Initial State (as of rebuild start)
 - `AGENTS.md` initialized as this spec.
-- `src/backend` and `src/frontend` are empty directories ready for FastAPI/Next.js scaffolding.
+- `src/backend` and `src/frontend` began as empty directories ready for FastAPI/Next.js scaffolding (frontend now contains modular Next.js implementation + nested AGENTS.md).
 - Legacy code and all supporting artifacts (semantics, examples, docs) are present and must be respected.
 
 This document takes precedence for agent behavior on future development of AOMDD4CPS Studio.
