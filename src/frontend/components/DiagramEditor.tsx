@@ -6,10 +6,12 @@ interface DiagramEditorProps {
   initialXML?: string;
   onApply: (xml: string) => void;
   onBack: () => void;
+  phase?: 'cim' | 'pim';
+  onChange?: (xml: string) => void;
 }
 
-type NodeType = 'actor' | 'goal' | 'task' | 'resource' | 'softgoal' | 'role';
-type EdgeType = 'and-refinement' | 'or-refinement' | 'dependency' | 'contribution';
+type NodeType = 'actor' | 'goal' | 'task' | 'resource' | 'softgoal' | 'role' | 'cps_component' | 'operational_goal' | 'action' | 'sw_resource' | 'hw_resource' | 'and_ref_operator' | 'or_ref_operator' | 'comm_thread' | 'listener_thread';
+type EdgeType = 'and-refinement' | 'or-refinement' | 'dependency' | 'contribution' | 'relation_from_to' | 'comm_relation';
 
 interface DiagNode {
   id: string;
@@ -40,13 +42,25 @@ interface DiagramModel {
   nextId: number;
 }
 
-const PALETTE: { type: NodeType; label: string; w: number; h: number }[] = [
+const CIM_PALETTE: { type: NodeType; label: string; w: number; h: number }[] = [
   { type: 'actor', label: 'Actor', w: 80, h: 80 },
   { type: 'goal', label: 'Goal', w: 140, h: 40 },
   { type: 'task', label: 'Task', w: 120, h: 42 },
   { type: 'resource', label: 'Resource', w: 100, h: 44 },
   { type: 'softgoal', label: 'Softgoal', w: 120, h: 50 },
   { type: 'role', label: 'Role', w: 80, h: 80 },
+];
+
+const PIM_PALETTE: { type: NodeType; label: string; w: number; h: number }[] = [
+  { type: 'cps_component', label: 'CPC', w: 160, h: 100 },
+  { type: 'operational_goal', label: 'Op. Goal', w: 90, h: 90 },
+  { type: 'action', label: 'Action', w: 95, h: 45 },
+  { type: 'sw_resource', label: 'SW Res', w: 90, h: 65 },
+  { type: 'hw_resource', label: 'HW Res', w: 105, h: 55 },
+  { type: 'and_ref_operator', label: 'AND', w: 50, h: 65 },
+  { type: 'or_ref_operator', label: 'OR', w: 50, h: 65 },
+  { type: 'comm_thread', label: 'Comm Sender', w: 135, h: 45 },
+  { type: 'listener_thread', label: 'Comm Receiver', w: 135, h: 45 },
 ];
 
 function getNodeStyle(type: NodeType) {
@@ -62,25 +76,48 @@ function getNodeStyle(type: NodeType) {
       return { background: '#dae8fc', border: '1px solid #6c8ebf' };
     case 'softgoal':
       return { borderRadius: '50% 50% 50% 50% / 70% 70% 30% 30%', background: '#dae8fc', border: '1px solid #6c8ebf' };
+    case 'cps_component':
+      return { borderRadius: '4px', background: '#bae6fd', border: '1px solid #0369a1' };
+    case 'operational_goal':
+      return { borderRadius: '50%', background: '#dbeafe', border: '1px solid #1e40af' };
+    case 'action':
+      return { background: '#dbeafe', border: '1px solid #1e40af' };
+    case 'sw_resource':
+      return { background: '#fef3c7', border: '1px solid #854d0e' };
+    case 'hw_resource':
+      return { background: '#fed7aa', border: '1px solid #9a3412' };
+    case 'and_ref_operator':
+    case 'or_ref_operator':
+      return { background: '#f3e8ff', border: '1px solid #6b21a8' };
+    case 'comm_thread':
+    case 'listener_thread':
+      return { clipPath: 'polygon(10% 0%, 100% 0%, 90% 100%, 0% 100%)', background: '#a5f3fc', border: '1px solid #164e63' };
     default:
       return { background: '#dae8fc', border: '1px solid #6c8ebf' };
   }
 }
 
-function parseXmlToModel(xml: string): DiagramModel {
+function parseXmlToModel(xml: string, phase: 'cim' | 'pim' = 'cim'): DiagramModel {
   const model: DiagramModel = { nodes: [], edges: [], nextId: 100 };
+  const isCim = phase === 'cim';
+  const allowedNodeTypes = isCim
+    ? ['actor','goal','task','resource','softgoal','role']
+    : ['cps_component','operational_goal','action','sw_resource','hw_resource','and_ref_operator','or_ref_operator','comm_thread','listener_thread'];
   if (!xml) return model;
   try {
     const doc = new DOMParser().parseFromString(xml, 'text/xml');
     const cells = doc.querySelectorAll('mxCell, object');
     const idMap = new Map<string, DiagNode>();
+    const idRemap = new Map<string, string>();
+    let nextId = 100;
+    const usedIds = new Set<string>();
     cells.forEach((el) => {
       const isObj = el.tagName === 'object';
       const mx = isObj ? el.querySelector('mxCell') : el;
       if (!mx) return;
-      const id = el.getAttribute('id') || mx.getAttribute('id') || '';
+      const rawId = el.getAttribute('id') || mx.getAttribute('id') || '';
       const parent = mx.getAttribute('parent') || '';
-      if (parent !== '1') return;
+      if (parent === '0') return;
       const geo = mx.querySelector('mxGeometry');
       if (!geo) return;
       const x = parseFloat(geo.getAttribute('x') || '0');
@@ -89,24 +126,41 @@ function parseXmlToModel(xml: string): DiagramModel {
       const h = parseFloat(geo.getAttribute('height') || '40');
       const label = (el.getAttribute('label') || mx.getAttribute('value') || '').replace(/<[^>]*>/g, '');
       const typ = (el.getAttribute('type') || '').toLowerCase() as NodeType;
-      if (mx.getAttribute('vertex') === '1' && typ && ['actor','goal','task','resource','softgoal','role'].includes(typ)) {
-        const node: DiagNode = { id, type: typ, label: label || typ, x, y, w, h };
+      if (mx.getAttribute('vertex') === '1' && typ && allowedNodeTypes.includes(typ)) {
+        let nodeId = rawId;
+        if (!nodeId || usedIds.has(nodeId)) {
+          while (usedIds.has('n' + nextId)) nextId++;
+          nodeId = 'n' + nextId;
+          nextId++;
+        }
+        usedIds.add(nodeId);
+        const node: DiagNode = { id: nodeId, type: typ, label: label || typ, x, y, w, h, parentId: (parent && parent !== '1' ? parent : undefined) };
         model.nodes.push(node);
-        idMap.set(id, node);
+        idMap.set(nodeId, node);
+        if (rawId && rawId !== nodeId) {
+          idRemap.set(rawId, nodeId);
+        }
+      }
+    });
+    model.nodes.forEach(n => {
+      if (n.parentId && idRemap.has(n.parentId)) {
+        n.parentId = idRemap.get(n.parentId);
       }
     });
     cells.forEach((el) => {
       const mx = el.tagName === 'object' ? el.querySelector('mxCell') : el;
       if (!mx || mx.getAttribute('edge') !== '1') return;
-      const id = el.getAttribute('id') || mx.getAttribute('id') || '';
-      const source = mx.getAttribute('source') || '';
-      const target = mx.getAttribute('target') || '';
+      const rawId = el.getAttribute('id') || mx.getAttribute('id') || '';
+      const sourceRaw = mx.getAttribute('source') || '';
+      const targetRaw = mx.getAttribute('target') || '';
+      const source = idRemap.get(sourceRaw) || sourceRaw;
+      const target = idRemap.get(targetRaw) || targetRaw;
       if (!source || !target || !idMap.has(source) || !idMap.has(target)) return;
       const style = mx.getAttribute('style') || '';
-      let etype: EdgeType = 'dependency';
+      let etype: EdgeType = isCim ? 'dependency' : 'relation_from_to';
       const typeAttr = (el.getAttribute('type') || '').toLowerCase();
       const valAttr = el.getAttribute('value') || '';
-      if (typeAttr === 'and-refinement' || typeAttr === 'or-refinement') {
+      if (typeAttr) {
         etype = typeAttr as EdgeType;
       } else if (typeAttr === 'refinement') {
         etype = (valAttr === 'or' || style.includes('block')) ? 'or-refinement' : 'and-refinement';
@@ -114,12 +168,24 @@ function parseXmlToModel(xml: string): DiagramModel {
         etype = (valAttr === 'or' || style.includes('block')) ? 'or-refinement' : 'and-refinement';
       } else if (style.includes('open') || valAttr) {
         etype = 'contribution';
-      } else {
-        etype = 'dependency';
+      } else if (style.includes('classic')) {
+        etype = isCim ? 'dependency' : 'relation_from_to';
       }
-      model.edges.push({ id, source, target, type: etype, value: etype === 'contribution' ? (valAttr || undefined) : undefined });
+      let edgeId = rawId;
+      if (!edgeId || usedIds.has(edgeId)) {
+        while (usedIds.has('e' + nextId)) nextId++;
+        edgeId = 'e' + nextId;
+        nextId++;
+      }
+      usedIds.add(edgeId);
+      model.edges.push({ id: edgeId, source, target, type: etype, value: etype === 'contribution' ? (valAttr || undefined) : undefined });
     });
-    model.nextId = Math.max(100, ...model.nodes.map(n => parseInt(n.id.replace(/\D/g,'')) || 100)) + 1;
+    let maxNum = nextId - 1;
+    [...model.nodes, ...model.edges].forEach(item => {
+      const num = parseInt((item.id || '').replace(/\D/g, '')) || 0;
+      if (num > maxNum) maxNum = num;
+    });
+    model.nextId = maxNum + 1;
 
     cells.forEach((el) => {
       const isObj = el.tagName === 'object';
@@ -133,38 +199,53 @@ function parseXmlToModel(xml: string): DiagramModel {
       const y = parseFloat(geo.getAttribute('y') || '0');
       const w = parseFloat(geo.getAttribute('width') || '200');
       const h = parseFloat(geo.getAttribute('height') || '150');
-      const actor = model.nodes.find(nn => nn.id === bfor);
-      if (actor) {
-        actor.boundaryX = x;
-        actor.boundaryY = y;
-        actor.boundaryW = w;
-        actor.boundaryH = h;
+      const container = model.nodes.find(nn => nn.id === bfor);
+      if (container) {
+        container.boundaryX = x;
+        container.boundaryY = y;
+        container.boundaryW = w;
+        container.boundaryH = h;
       }
     });
   } catch {}
   if (model.nodes.length === 0) {
-    model.nodes = [
-      { id: 'a1', type: 'actor', label: 'System', x: 120, y: 80, w: 80, h: 80 },
-      { id: 'g1', type: 'goal', label: 'Goal', x: 280, y: 100, w: 140, h: 40 },
-    ];
-    model.edges = [{ id: 'e1', source: 'a1', target: 'g1', type: 'and-refinement' }];
+    if (isCim) {
+      model.nodes = [
+        { id: 'a1', type: 'actor', label: 'System', x: 120, y: 80, w: 80, h: 80 },
+        { id: 'g1', type: 'goal', label: 'Goal', x: 280, y: 100, w: 140, h: 40 },
+      ];
+      model.edges = [{ id: 'e1', source: 'a1', target: 'g1', type: 'and-refinement' }];
+    } else {
+      model.nodes = [
+        { id: 'c1', type: 'cps_component', label: 'Component', x: 100, y: 80, w: 160, h: 100, boundaryX: 70, boundaryY: 50, boundaryW: 320, boundaryH: 220 },
+        { id: 'og1', type: 'operational_goal', label: 'Op Goal', x: 180, y: 110, w: 90, h: 90 },
+      ];
+      model.edges = [{ id: 'e1', source: 'c1', target: 'og1', type: 'relation_from_to' }];
+    }
   }
   model.nodes.forEach(n => {
-    if ((n.type === 'actor' || n.type === 'role') && n.boundaryW == null) {
-      n.boundaryW = 220;
-      n.boundaryH = 160;
-      n.boundaryX = n.x + 45;
-      n.boundaryY = n.y - 35;
+    if (isContainerType(n.type) && n.boundaryW == null) {
+      if (n.type === 'cps_component') {
+        n.boundaryW = 280;
+        n.boundaryH = 180;
+        n.boundaryX = n.x - 20;
+        n.boundaryY = n.y - 20;
+      } else {
+        n.boundaryW = 220;
+        n.boundaryH = 160;
+        n.boundaryX = n.x + 45;
+        n.boundaryY = n.y - 35;
+      }
     }
     const sz = getMinSizeForNode(n.type, n.label);
     n.w = Math.max(n.w, sz.w);
     n.h = Math.max(n.h, sz.h);
   });
   model.nodes.forEach(n => {
-    if (n.type === 'actor' || n.type === 'role' || n.parentId != null) return;
+    if (isContainerType(n.type) || n.parentId != null) return;
     const cx = n.x + n.w / 2;
     const cy = n.y + n.h / 2;
-    const cont = findContainingActor(cx, cy, model.nodes);
+    const cont = findContainingContainer(cx, cy, model.nodes);
     if (cont) n.parentId = cont.id;
   });
   return model;
@@ -173,10 +254,10 @@ function parseXmlToModel(xml: string): DiagramModel {
 function modelToXml(model: DiagramModel, diagramName = 'Diagram'): string {
   let cells = '<mxCell id="0"/><mxCell id="1" parent="0"/>';
   model.nodes.forEach(n => {
-    if ((n.type === 'actor' || n.type === 'role') && n.boundaryW != null) {
-      const bstyle = 'ellipse;whiteSpace=wrap;html=1;dashed=1;dashPattern=3 2;strokeWidth=2;fillColor=none;strokeColor=#6c8ebf;';
-      const bx = n.boundaryX ?? (n.x + 45);
-      const by = n.boundaryY ?? (n.y - 35);
+    if (isContainerType(n.type) && n.boundaryW != null) {
+      const bstyle = getBoundaryStyle(n.type);
+      const bx = n.boundaryX ?? (n.x + (n.type === 'cps_component' ? -20 : 45));
+      const by = n.boundaryY ?? (n.y + (n.type === 'cps_component' ? -20 : -35));
       const bw = n.boundaryW;
       const bh = n.boundaryH;
       cells += `<object label="" boundaryFor="${n.id}" id="bnd-${n.id}"><mxCell style="${bstyle}" vertex="1" parent="1"><mxGeometry x="${bx}" y="${by}" width="${bw}" height="${bh}" as="geometry"/></mxCell></object>`;
@@ -200,6 +281,15 @@ function getStyleForType(t: NodeType): string {
   if (t === 'task') return 'shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;strokeWidth=1;fillColor=#dae8fc;strokeColor=#6c8ebf;size=10;';
   if (t === 'resource') return 'rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;';
   if (t === 'softgoal') return 'rounded=1;whiteSpace=wrap;html=1;arcSize=80;fillColor=#dae8fc;strokeColor=#6c8ebf;';
+  if (t === 'cps_component') return 'swimlane;whiteSpace=wrap;html=1;fillColor=#e0f2fe;strokeColor=#0369a1;';
+  if (t === 'operational_goal') return 'ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#dbeafe;strokeColor=#1e40af;';
+  if (t === 'action') return 'rounded=0;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1e40af;';
+  if (t === 'sw_resource') return 'shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#fef3c7;strokeColor=#854d0e;';
+  if (t === 'hw_resource') return 'shape=cube;spacingTop=8;spacingLeft=2;spacingRight=12;size=10;direction=south;fillColor=#fed7aa;strokeColor=#9a3412;';
+  if (t === 'and_ref_operator') return 'shape=or;whiteSpace=wrap;html=1;fillColor=#f3e8ff;strokeColor=#6b21a8;';
+  if (t === 'or_ref_operator') return 'shape=xor;whiteSpace=wrap;html=1;fillColor=#f3e8ff;strokeColor=#6b21a8;';
+  if (t === 'comm_thread') return 'shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#a5f3fc;strokeColor=#164e63;';
+  if (t === 'listener_thread') return 'shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;flipV=1;fillColor=#a5f3fc;strokeColor=#164e63;';
   return 'rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;';
 }
 
@@ -208,6 +298,15 @@ function getStyleForEdge(t: EdgeType): string {
   if (t === 'or-refinement') return 'endArrow=block;html=1;rounded=0;endFill=1;endSize=10;';
   if (t === 'contribution') return 'endArrow=open;html=1;rounded=0;endFill=0;endSize=10;';
   return 'endArrow=classic;html=1;rounded=0;endFill=0;endSize=10;';
+}
+
+function getBoundaryStyle(t: NodeType): string {
+  if (t === 'cps_component') return 'rounded=1;whiteSpace=wrap;html=1;dashed=1;dashPattern=3 2;strokeWidth=2;fillColor=none;strokeColor=#0369a1;';
+  return 'ellipse;whiteSpace=wrap;html=1;dashed=1;dashPattern=3 2;strokeWidth=2;fillColor=none;strokeColor=#6c8ebf;';
+}
+
+function isContainerType(t: NodeType): boolean {
+  return t === 'actor' || t === 'role' || t === 'cps_component';
 }
 
 function escapeXml(s: string) {
@@ -226,13 +325,19 @@ function measureTextWidth(text: string): number {
   return ctx.measureText(text || '').width;
 }
 
+const NODE_DEFAULTS: Record<NodeType, {w: number, h: number}> = {
+  actor: {w:80,h:80}, role: {w:80,h:80}, goal: {w:140,h:40}, task: {w:120,h:42}, resource: {w:100,h:44}, softgoal: {w:120,h:50},
+  cps_component: {w:160,h:100}, operational_goal: {w:90,h:90}, action: {w:95,h:45}, sw_resource: {w:90,h:65}, hw_resource: {w:105,h:55},
+  and_ref_operator: {w:50,h:65}, or_ref_operator: {w:50,h:65}, comm_thread: {w:135,h:45}, listener_thread: {w:135,h:45},
+};
+
 function getMinSizeForNode(type: NodeType, label: string): {w: number, h: number} {
   const tw = measureTextWidth(label || ' ');
   const pad = 20;
   const reqW = Math.ceil(tw + pad);
-  const p = PALETTE.find(pp => pp.type === type)!;
-  if (type === 'actor' || type === 'role') {
-    const d = Math.max(p.w, reqW, 60);
+  const p = NODE_DEFAULTS[type] || {w:100, h:40};
+  if (type === 'actor' || type === 'role' || type === 'cps_component') {
+    const d = Math.max(p.w, reqW, type === 'cps_component' ? 80 : 60);
     return {w: d, h: d};
   }
   const aspect = p.h / p.w;
@@ -259,8 +364,20 @@ function isInsideEllipse(px: number, py: number, ex: number, ey: number, ew: num
   return (dx * dx + dy * dy) <= 1;
 }
 
-function findContainingActor(px: number, py: number, nodes: DiagNode[]): DiagNode | undefined {
-  const cands = nodes.filter(n => (n.type === 'actor' || n.type === 'role') && n.boundaryW != null && isInsideEllipse(px, py, n.boundaryX ?? 0, n.boundaryY ?? 0, n.boundaryW, n.boundaryH!));
+function isPointInContainer(px: number, py: number, n: DiagNode): boolean {
+  if (!n.boundaryW || n.boundaryH == null) return false;
+  const bx = n.boundaryX ?? 0;
+  const by = n.boundaryY ?? 0;
+  const bw = n.boundaryW;
+  const bh = n.boundaryH;
+  if (n.type === 'cps_component') {
+    return px >= bx && px <= bx + bw && py >= by && py <= by + bh;
+  }
+  return isInsideEllipse(px, py, bx, by, bw, bh);
+}
+
+function findContainingContainer(px: number, py: number, nodes: DiagNode[]): DiagNode | undefined {
+  const cands = nodes.filter(n => isContainerType(n.type) && n.boundaryW != null && isPointInContainer(px, py, n));
   if (cands.length === 0) return undefined;
   return cands.reduce((best, cur) => {
     const ba = best.boundaryW! * best.boundaryH!;
@@ -310,15 +427,15 @@ function getRectBoundaryIntersection(cx: number, cy: number, tx: number, ty: num
   return { x: ix, y: iy };
 }
 
-export default function DiagramEditor({ initialXML = '', onApply, onBack }: DiagramEditorProps) {
-  const [model, setModel] = useState<DiagramModel>(() => parseXmlToModel(initialXML));
+export default function DiagramEditor({ initialXML = '', onApply, onBack, phase = 'cim', onChange }: DiagramEditorProps) {
+  const [model, setModel] = useState<DiagramModel>(() => parseXmlToModel(initialXML, phase));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [connectMode, setConnectMode] = useState<EdgeType | null>(null);
   const [connectSource, setConnectSource] = useState<string | null>(null);
-  const [dragOverActor, setDragOverActor] = useState<string | null>(null);
+  const [dragOverContainer, setDragOverContainer] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
   const liveDragPosRef = useRef<{ id: string; x: number; y: number; w: number; h: number } | null>(null);
@@ -328,14 +445,23 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
   const redoStackRef = useRef<DiagramModel[]>([]);
   const modelRef = useRef<DiagramModel>(model);
 
+  const currentPhase = phase;
+  const palette = currentPhase === 'pim' ? PIM_PALETTE : CIM_PALETTE;
+
   const currentXml = useMemo(() => modelToXml(model), [model]);
   const didInitRef = useRef(false);
+  const onChangeRef = useRef<((xml: string) => void) | undefined>(onChange);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+
+  useEffect(() => {
+    if (onChangeRef.current) onChangeRef.current(currentXml);
+  }, [currentXml]);
   const bounds = useMemo(() => {
     let maxX = 400, maxY = 300;
     model.nodes.forEach(n => {
       maxX = Math.max(maxX, n.x + n.w + 100);
       maxY = Math.max(maxY, n.y + n.h + 100);
-      if ((n.type === 'actor' || n.type === 'role') && n.boundaryW != null) {
+      if (isContainerType(n.type) && n.boundaryW != null) {
         maxX = Math.max(maxX, (n.boundaryX || 0) + n.boundaryW + 60);
         maxY = Math.max(maxY, (n.boundaryY || 0) + (n.boundaryH || 0) + 60);
       }
@@ -348,10 +474,10 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
       didInitRef.current = true;
       undoStackRef.current = [];
       redoStackRef.current = [];
-      const m = parseXmlToModel(initialXML);
+      const m = parseXmlToModel(initialXML, phase);
       setModel(m);
     }
-  }, [initialXML]);
+  }, [initialXML, phase]);
 
   useEffect(() => { modelRef.current = model; }, [model]);
 
@@ -386,22 +512,30 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
   const addNode = (type: NodeType) => {
     undoStackRef.current = [...undoStackRef.current.slice(-49), cloneModel(modelRef.current)];
     redoStackRef.current = [];
-    const p = PALETTE.find(p => p.type === type)!;
+    const palette = phase === 'pim' ? PIM_PALETTE : CIM_PALETTE;
+    const p = palette.find(p => p.type === type)!;
     const x = 80 + (model.nodes.length % 4) * 60;
     const y = 60 + Math.floor(model.nodes.length / 4) * 50;
     let newId = '';
     updateModel(m => {
       newId = 'n' + m.nextId;
       const node: DiagNode = { id: newId, type, label: p.label, x, y, w: p.w, h: p.h };
-      if (type === 'actor' || type === 'role') {
-        node.boundaryW = 240;
-        node.boundaryH = 180;
-        node.boundaryX = x + 55;
-        node.boundaryY = y - 50;
+      if (isContainerType(type)) {
+        if (type === 'cps_component') {
+          node.boundaryW = 280;
+          node.boundaryH = 200;
+          node.boundaryX = x - 20;
+          node.boundaryY = y - 20;
+        } else {
+          node.boundaryW = 240;
+          node.boundaryH = 180;
+          node.boundaryX = x + 55;
+          node.boundaryY = y - 50;
+        }
       } else {
         const cx = x + p.w / 2;
         const cy = y + p.h / 2;
-        const cont = findContainingActor(cx, cy, m.nodes);
+        const cont = findContainingContainer(cx, cy, m.nodes);
         if (cont) node.parentId = cont.id;
       }
       m.nodes.push(node);
@@ -471,11 +605,11 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
     const st = canvasRef.current!.scrollTop;
     dragRef.current = { id, offsetX: e.clientX - rect.left + sl - node.x, offsetY: e.clientY - rect.top + st - node.y };
     liveDragPosRef.current = { id, x: node.x, y: node.y, w: node.w, h: node.h };
-    if (node.type !== 'actor' && node.type !== 'role') {
+    if (!isContainerType(node.type)) {
       const cx = node.x + node.w / 2;
       const cy = node.y + node.h / 2;
-      const over = findContainingActor(cx, cy, modelRef.current.nodes);
-      setDragOverActor(over ? over.id : null);
+      const over = findContainingContainer(cx, cy, modelRef.current.nodes);
+      setDragOverContainer(over ? over.id : null);
     }
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
@@ -570,7 +704,7 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
         const dy = Math.round(ny) - n.y;
         n.x = Math.round(nx);
         n.y = Math.round(ny);
-        if ((n.type === 'actor' || n.type === 'role') && n.boundaryX !== undefined && n.boundaryY !== undefined) {
+        if (isContainerType(n.type) && n.boundaryX !== undefined && n.boundaryY !== undefined) {
           n.boundaryX += dx;
           n.boundaryY += dy;
           m.nodes.forEach(ch => {
@@ -588,12 +722,12 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
     const lp = liveDragPosRef.current;
     if (lp && lp.id === dragRef.current.id) {
       const dnode = modelRef.current.nodes.find(nn => nn.id === lp.id);
-      if (dnode && dnode.type !== 'actor' && dnode.type !== 'role') {
+      if (dnode && !isContainerType(dnode.type)) {
         const pcx = lp.x + lp.w / 2;
         const pcy = lp.y + lp.h / 2;
-        const over = findContainingActor(pcx, pcy, modelRef.current.nodes);
+        const over = findContainingContainer(pcx, pcy, modelRef.current.nodes);
         const overId = over ? over.id : null;
-        if (overId !== dragOverActor) setDragOverActor(overId);
+        if (overId !== dragOverContainer) setDragOverContainer(overId);
       }
     }
   };
@@ -605,13 +739,13 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
     liveDragPosRef.current = null;
     boundaryDragRef.current = null;
     boundaryResizeRef.current = null;
-    setDragOverActor(null);
+    setDragOverContainer(null);
     if (draggedId && finalPos && finalPos.id === draggedId) {
       const node = modelRef.current.nodes.find(nn => nn.id === draggedId);
-      if (node && node.type !== 'actor' && node.type !== 'role') {
+      if (node && !isContainerType(node.type)) {
         const cx = finalPos.x + finalPos.w / 2;
         const cy = finalPos.y + finalPos.h / 2;
-        const cont = findContainingActor(cx, cy, modelRef.current.nodes);
+        const cont = findContainingContainer(cx, cy, modelRef.current.nodes);
         const newPid = cont ? cont.id : undefined;
         if (node.parentId !== newPid) {
           updateModel(m => {
@@ -633,7 +767,7 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
       } else {
         setSelectedId(null);
         setSelectedEdgeId(null);
-        setDragOverActor(null);
+        setDragOverContainer(null);
       }
     }
   };
@@ -658,7 +792,7 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
       liveDragPosRef.current = null;
       boundaryDragRef.current = null;
       boundaryResizeRef.current = null;
-      setDragOverActor(null);
+      setDragOverContainer(null);
     }
   }, [selectedId, selectedEdgeId]);
 
@@ -702,7 +836,7 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
       setConnectMode(null);
       setConnectSource(null);
       setEditingId(null);
-      setDragOverActor(null);
+      setDragOverContainer(null);
       liveDragPosRef.current = null;
     }
   }, [deleteSelected, undo, redo]);
@@ -719,10 +853,10 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
   const newIStar = () => {
     undoStackRef.current = [];
     redoStackRef.current = [];
-    setModel(parseXmlToModel(''));
+    setModel(parseXmlToModel('', currentPhase));
     setSelectedId(null);
     setSelectedEdgeId(null);
-    setDragOverActor(null);
+    setDragOverContainer(null);
     liveDragPosRef.current = null;
   };
 
@@ -732,7 +866,7 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
     setModel({ nodes: [], edges: [], nextId: 100 });
     setSelectedId(null);
     setSelectedEdgeId(null);
-    setDragOverActor(null);
+    setDragOverContainer(null);
     liveDragPosRef.current = null;
   };
 
@@ -740,10 +874,10 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
     if (initialXML) {
       undoStackRef.current = [];
       redoStackRef.current = [];
-      setModel(parseXmlToModel(initialXML));
+      setModel(parseXmlToModel(initialXML, currentPhase));
       setSelectedId(null);
       setSelectedEdgeId(null);
-      setDragOverActor(null);
+      setDragOverContainer(null);
       liveDragPosRef.current = null;
     }
   };
@@ -753,19 +887,28 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
       <div className="px-4 py-2 border-b border-[#33334d] flex items-center justify-between text-sm flex-shrink-0">
         <div>
           <span className="font-medium">Diagram Editor</span>
-          <span className="ml-2 text-[#9ca3af] text-xs">in-app visual • i* only • offline</span>
+          <span className="ml-2 text-[#9ca3af] text-xs">in-app visual • {currentPhase} • offline</span>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={newIStar} className="btn btn-secondary text-xs py-1 px-2">New i* Starter</button>
+          <button onClick={newIStar} className="btn btn-secondary text-xs py-1 px-2">{currentPhase === 'cim' ? 'New i* Starter' : 'New PIM Starter'}</button>
           <button onClick={newBlank} className="btn btn-secondary text-xs py-1 px-2">Blank</button>
           <button onClick={loadProcess} className="btn btn-secondary text-xs py-1 px-2" disabled={!initialXML}>Load from Process</button>
-          {PALETTE.map(p => (
+          {palette.map(p => (
             <button key={p.type} onClick={() => addNode(p.type)} className="btn btn-secondary text-xs py-1 px-2">{p.label}</button>
           ))}
-           <button onClick={() => startConnect('and-refinement')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>AND Refine</button>
-           <button onClick={() => startConnect('or-refinement')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>OR Refine</button>
-           <button onClick={() => startConnect('dependency')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>Depends</button>
-           <button onClick={() => startConnect('contribution')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>Contrib</button>
+          {currentPhase === 'cim' ? (
+            <>
+             <button onClick={() => startConnect('and-refinement')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>AND Refine</button>
+             <button onClick={() => startConnect('or-refinement')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>OR Refine</button>
+             <button onClick={() => startConnect('dependency')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>Depends</button>
+             <button onClick={() => startConnect('contribution')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>Contrib</button>
+            </>
+          ) : (
+            <>
+             <button onClick={() => startConnect('relation_from_to')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>Relate</button>
+             <button onClick={() => startConnect('comm_relation')} className="btn btn-secondary text-xs py-1 px-2" disabled={!!connectMode}>Comm</button>
+            </>
+          )}
           <button onClick={deleteSelected} className="btn btn-secondary text-xs py-1 px-2" disabled={!selectedId}>Delete</button>
           <button onClick={apply} className="btn btn-primary text-xs py-1 px-2">Use in MDD Process</button>
           <button onClick={onBack} className="btn btn-secondary text-xs py-1 px-2">Back to Process</button>
@@ -775,15 +918,15 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
       <div className="flex flex-1 min-h-0">
         <div className="w-48 border-r border-[#33334d] p-2 text-xs overflow-auto bg-[#0a0a12]">
           <div className="mb-2 font-medium text-[#9ca3af]">Palette (click to add)</div>
-          {PALETTE.map(p => (
+          {palette.map(p => (
             <div key={p.type} onClick={() => addNode(p.type)} className="cursor-pointer mb-1 px-2 py-1 rounded hover:bg-[#23233a] border border-[#33334d] flex items-center gap-2 text-[11px]">
               <span className="inline-block w-4 h-3" style={getNodeStyle(p.type)} /> {p.label}
             </div>
           ))}
             <div className="mt-3 text-[10px] text-[#9ca3af]">
-              Click node/edge to select • Drag nodes • Double-click label • Tap link button then source then target • Grid click deselects • Del removes selected
+              Click node/edge to select • Drag nodes • Double-click label • Tap link button then source then target • Grid click deselects • Del removes selected • Containers auto-group on drag in
             </div>
-          {connectMode && <div className="mt-2 text-amber-400 text-xs">Link mode ({connectMode === 'and-refinement' ? 'AND Refine' : connectMode === 'or-refinement' ? 'OR Refine' : connectMode}): click SOURCE then TARGET node</div>}
+          {connectMode && <div className="mt-2 text-amber-400 text-xs">Link mode ({connectMode}): click SOURCE then TARGET node</div>}
         </div>
 
         <div
@@ -814,40 +957,53 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
                   <path d="M0,0 L0,6 L9,3" fill="none" stroke="#6c8ebf" strokeWidth="1" />
                 </marker>
               </defs>
-              {model.nodes.filter(n => (n.type === 'actor' || n.type === 'role') && n.boundaryW != null).map(n => {
-                const bx = n.boundaryX ?? n.x + 45;
-                const by = n.boundaryY ?? n.y - 35;
+              {model.nodes.filter(n => isContainerType(n.type) && n.boundaryW != null).map(n => {
+                const bx = n.boundaryX ?? (n.type === 'cps_component' ? n.x - 20 : n.x + 45);
+                const by = n.boundaryY ?? (n.type === 'cps_component' ? n.y - 20 : n.y - 35);
                 const bw = n.boundaryW!;
                 const bh = n.boundaryH!;
                 const isSel = selectedId === n.id;
-                const isOver = dragOverActor === n.id;
+                const isOver = dragOverContainer === n.id;
                 const onBClick = (ev: React.MouseEvent) => { ev.stopPropagation(); setSelectedId(n.id); setSelectedEdgeId(null); };
-                return (
+                const isRect = n.type === 'cps_component';
+                const commonProps = {
+                  fill: isOver ? '#166534' : 'none',
+                  fillOpacity: isOver ? 0.12 : undefined,
+                  stroke: isSel ? '#6366f1' : isOver ? '#22c55e' : (n.type === 'cps_component' ? '#0369a1' : '#6c8ebf'),
+                  strokeWidth: isSel || isOver ? 3 : 2,
+                  strokeDasharray: isOver ? '3 2' : '5 3',
+                  onClick: onBClick,
+                  onPointerDown: (e: React.PointerEvent) => {
+                    if (connectMode) return;
+                    undoStackRef.current = [...undoStackRef.current.slice(-49), cloneModel(modelRef.current)];
+                    redoStackRef.current = [];
+                    setSelectedId(n.id);
+                    setSelectedEdgeId(null);
+                    const rect = canvasRef.current!.getBoundingClientRect();
+                    const sl = canvasRef.current!.scrollLeft;
+                    const st = canvasRef.current!.scrollTop;
+                    boundaryDragRef.current = { id: n.id, offsetX: e.clientX - rect.left + sl - bx, offsetY: e.clientY - rect.top + st - by };
+                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                  },
+                  style: { pointerEvents: 'all' as const, cursor: connectMode ? 'crosshair' : 'move' as const },
+                };
+                return isRect ? (
+                  <rect
+                    key={`bound-${n.id}`}
+                    x={bx}
+                    y={by}
+                    width={bw}
+                    height={bh}
+                    {...commonProps}
+                  />
+                ) : (
                   <ellipse
                     key={`bound-${n.id}`}
                     cx={bx + bw / 2}
                     cy={by + bh / 2}
                     rx={bw / 2}
                     ry={bh / 2}
-                    fill={isOver ? '#166534' : 'none'}
-                    fillOpacity={isOver ? 0.12 : undefined}
-                    stroke={isSel ? '#6366f1' : isOver ? '#22c55e' : '#6c8ebf'}
-                    strokeWidth={isSel || isOver ? 3 : 2}
-                    strokeDasharray={isOver ? '3 2' : '5 3'}
-                    onClick={onBClick}
-                    onPointerDown={(e) => {
-                      if (connectMode) return;
-                      undoStackRef.current = [...undoStackRef.current.slice(-49), cloneModel(modelRef.current)];
-                      redoStackRef.current = [];
-                      setSelectedId(n.id);
-                      setSelectedEdgeId(null);
-                      const rect = canvasRef.current!.getBoundingClientRect();
-                      const sl = canvasRef.current!.scrollLeft;
-                      const st = canvasRef.current!.scrollTop;
-                      boundaryDragRef.current = { id: n.id, offsetX: e.clientX - rect.left + sl - bx, offsetY: e.clientY - rect.top + st - by };
-                      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                    }}
-                    style={{ pointerEvents: 'all', cursor: connectMode ? 'crosshair' : 'move' }}
+                    {...commonProps}
                   />
                 );
               })}
@@ -868,8 +1024,9 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
                 if (e.type === 'and-refinement') label = 'AND';
                 else if (e.type === 'or-refinement') label = 'OR';
                 else if (e.type === 'dependency') label = 'D';
+                else if (e.type === 'comm_relation') label = 'msg';
                 else if (e.value) label = e.value;
-                const marker = e.type === 'and-refinement' ? 'arrow-and' : e.type === 'or-refinement' ? 'arrow-or' : e.type === 'dependency' ? 'arrow-dep' : 'arrow-contrib';
+                const marker = e.type === 'and-refinement' ? 'arrow-and' : e.type === 'or-refinement' ? 'arrow-or' : e.type === 'dependency' ? 'arrow-dep' : e.type === 'contribution' ? 'arrow-contrib' : 'arrow-dep';
                 const selectEdge = (ev: React.MouseEvent) => { ev.stopPropagation(); setSelectedEdgeId(e.id); setSelectedId(null); };
                 return (
                   <g key={e.id}>
@@ -943,7 +1100,7 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
             })}
             {(() => {
               const sel = model.nodes.find(n => n.id === selectedId);
-              if (!sel || (sel.type !== 'actor' && sel.type !== 'role') || sel.boundaryW == null || sel.boundaryH == null) return null;
+              if (!sel || !isContainerType(sel.type) || sel.boundaryW == null || sel.boundaryH == null) return null;
               const bx = sel.boundaryX ?? 0;
               const by = sel.boundaryY ?? 0;
               const bw = sel.boundaryW;
@@ -982,7 +1139,7 @@ export default function DiagramEditor({ initialXML = '', onApply, onBack }: Diag
 
       <div className="px-4 py-1 text-[10px] border-t border-[#33334d] text-[#9ca3af] flex justify-between flex-shrink-0">
         <span>{model.nodes.length} elements • {model.edges.length} links • {connectMode ? `link mode: ${connectMode}` : selectedEdgeId ? 'edge selected' : selectedId ? 'selected' : 'ready'}</span>
-        <span>Visual i* editor (reduced draw.io style) • fully in-app &amp; offline • Apply to feed MDD process</span>
+        <span>Visual editor (reduced draw.io style) • {currentPhase.toUpperCase()} • fully in-app &amp; offline • Apply to feed MDD process</span>
       </div>
     </div>
   );

@@ -8,7 +8,7 @@ import XmlInputPanel from '../components/XmlInputPanel';
 import XmlOutputPanel from '../components/XmlOutputPanel';
 import QuestionnaireModal from '../components/QuestionnaireModal';
 import DiagramEditor from '../components/DiagramEditor';
-import { Mode, Step, Screen } from '../lib/types';
+import { Mode, Step, Screen, DiagramPhase } from '../lib/types';
 
 const STEPS: Step[] = [
   { id: 1, label: 'Input Model' },
@@ -29,9 +29,13 @@ export default function AOMDDStudio() {
   const [questionnaireAnswers, setQuestionnaireAnswers] = useState<Record<string, string>>({});
   const [rulesApplied, setRulesApplied] = useState(false);
   const [screen, setScreen] = useState<Screen>('process');
-  const [editorInitial, setEditorInitial] = useState('');
+  const [diagramPhase, setDiagramPhase] = useState<DiagramPhase>('cim');
+  const [cimXML, setCimXML] = useState('');
+  const [pimXML, setPimXML] = useState('');
 
   const isPsm = mode === 'pim-psm';
+
+  const activeDiagramXML = diagramPhase === 'cim' ? cimXML : pimXML;
 
   const loadFile = (file: File) => {
     const reader = new FileReader();
@@ -154,7 +158,8 @@ export default function AOMDDStudio() {
   };
 
   const openEditor = () => {
-    setEditorInitial(inputXML);
+    if (diagramPhase === 'cim' && !cimXML) setCimXML(inputXML);
+    if (diagramPhase === 'pim' && !pimXML) setPimXML(inputXML);
     setScreen('editor');
   };
 
@@ -163,6 +168,11 @@ export default function AOMDDStudio() {
   };
 
   const applyFromEditor = (xml: string) => {
+    if (diagramPhase === 'cim') {
+      setCimXML(xml);
+    } else {
+      setPimXML(xml);
+    }
     setInputXML(xml);
     setOutputXML('');
     setCurrentStep(1);
@@ -172,10 +182,15 @@ export default function AOMDDStudio() {
 
   const switchScreen = (s: Screen) => {
     if (s === 'editor') {
-      setEditorInitial(inputXML);
+      if (diagramPhase === 'cim' && !cimXML) setCimXML(inputXML);
+      if (diagramPhase === 'pim' && !pimXML) setPimXML(inputXML);
     }
     setScreen(s);
   };
+
+  const handleDiagramChange = useCallback((xml: string) => {
+    if (diagramPhase === 'cim') setCimXML(xml); else setPimXML(xml);
+  }, [diagramPhase]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -183,10 +198,19 @@ export default function AOMDDStudio() {
 
       {screen === 'editor' ? (
         <div className="flex-1 flex flex-col min-h-0">
+          <div className="px-4 py-2 border-b border-[#33334d] bg-[#0a0a12] flex items-center gap-3 text-sm flex-shrink-0">
+            <span className="text-[#9ca3af]">Diagram Phase:</span>
+            <button onClick={() => setDiagramPhase('cim')} className={`px-2 py-0.5 text-xs rounded border ${diagramPhase === 'cim' ? 'bg-[#6366f1] text-white border-[#6366f1]' : 'border-[#33334d] hover:bg-[#23233a]'}`}>CIM (iStar)</button>
+            <button onClick={() => setDiagramPhase('pim')} className={`px-2 py-0.5 text-xs rounded border ${diagramPhase === 'pim' ? 'bg-[#6366f1] text-white border-[#6366f1]' : 'border-[#33334d] hover:bg-[#23233a]'}`}>PIM (DSL)</button>
+            <span className="text-[10px] text-[#9ca3af] ml-2">Same engine, phase-specific palette &amp; links</span>
+          </div>
           <DiagramEditor
-            initialXML={editorInitial}
+            key={diagramPhase}
+            initialXML={activeDiagramXML}
+            phase={diagramPhase}
             onApply={applyFromEditor}
             onBack={closeEditor}
+            onChange={handleDiagramChange}
           />
         </div>
       ) : (
