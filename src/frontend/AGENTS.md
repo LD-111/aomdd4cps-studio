@@ -19,9 +19,22 @@ src/frontend/
 │   ├── XmlInputPanel.tsx
 │   ├── XmlOutputPanel.tsx
 │   ├── QuestionnaireModal.tsx
-│         └── DiagramEditor.tsx   # Reusable phase-driven diagram engine (CIM i*/PIM DSL palettes+links; SVG+DOM, boundaries for containers, drag/group/parentId, draw.io XML roundtrip; on phase prop + live onChange)
+│   └── DiagramEditor/      # Subdir for large editor (post 2026-09-28 modularization)
+│       ├── index.tsx
+│       ├── DiagramEditor.tsx  # Coordinator (state, handlers, composition)
+│       ├── Toolbar.tsx
+│       ├── Sidebar.tsx
+│       ├── Canvas.tsx
+│       ├── Node.tsx
+│       └── Handles.tsx
+│   └── DiagramEditor.tsx   # Re-export shim (keeps import paths stable in page.tsx)
 ├── lib/                    # Shared types, utilities, pure logic (no UI)
-│   └── types.ts            # Mode, Step, future model types (Zod later)
+│   ├── types.ts            # Mode, Step, future model types (Zod later)
+│   └── diagram/            # Pure diagram model + utils (types, parseXmlToModel, modelToXml, geom, styles, palettes)
+│       ├── index.ts
+│       ├── types.ts
+│       ├── model.ts
+│       └── utils.ts
 ├── public/
 │   ├── input/              # Copied from legacy (CIM-PIM-Rules.json, PIM-PSM-Rules.json, XSLs) — reference only for now
 │   └── examples/           # Sample CIM/PIM models for demo loading
@@ -73,7 +86,7 @@ When adding features:
 5. Update this `AGENTS.md` (see rule below).
 6. Run `npm run lint && npx tsc --noEmit && npm run build` from `src/frontend/`.
 
-DiagramEditor implements separate full-screen editor view toggled via screen state in page; supports initialXML roundtrip and onApply to feed process seamlessly. Reusable for MDD phases via `phase` prop ('cim'|'pim') + onChange live. Same engine, different palettes/links: CIM uses i* (actor/goal/task/resource/softgoal/role + and/or-refine/dep/contrib edges); PIM uses DSL (cps_component/operational_goal/action/sw|hw_resource/and|or_ref_operator/comm_thread/listener_thread + relation/comm edges). Containers (actor/role/cps) use resizable dashed boundary (ellipse/rect) + parentId grouping with move/resize propagation + auto assign on drop. Parses relaxed parent!=1 for PIM nesting (adjusts to abs + parentId); always serializes flat + boundaryFor for editor roundtrip (draw.io compatible). In-app visual using SVG+DOM nodes (phase-driven palette, sticky select, drag, dbl label edit, link mode source-then-target, del, undo/redo, auto-size). Edges center-to-boundary intersect. PIM cps uses rect boundary + swimlane-ish styles. Zero external deps, fully offline. Phase switcher in page (keyed remount + live sync). Header updated for navigation tabs. Parser for draw.io XML now assigns unique generated ids (e-prefixed) to any edges missing id attrs (common in direct mxCell edges) to prevent React duplicate key='' errors; also handles node id robustness + nextId max across all. Live onChange + parent xml sync stabilized via useCallback + internal ref to avoid max update depth / re-render loops from unstable callback deps in the notify useEffect.
+DiagramEditor (now in subdir components/DiagramEditor/ with re-export shim) implements separate full-screen editor view toggled via screen state in page; supports initialXML roundtrip and onApply to feed process seamlessly. Reusable for MDD phases via `phase` prop ('cim'|'pim') + onChange live. Same engine, different palettes/links. Pure logic extracted to lib/diagram/ (types, parseXmlToModel/modelToXml, utils, palettes). UI split into Toolbar/Sidebar/Canvas/Node/Handles for maintainability. All prior behavior and contracts preserved. Containers use resizable dashed boundary + parentId grouping. In-app visual SVG+DOM. Zero external deps, fully offline. 
 
 ## Nested AGENTS.md Rule (Mandatory)
 
@@ -87,9 +100,9 @@ DiagramEditor implements separate full-screen editor view toggled via screen sta
 
 ## Current State & Next Priorities (UI)
 
-- Modularized (post initial setup).
+- Modularized (post initial setup + 2026-09-28 DiagramEditor split into subdir + lib/diagram pure layer).
 - First-pass modern dark UI with mode switching, DnD, demo questionnaire, mock transform.
-  - Separate Diagram Editor screen: phase-aware reusable engine for CIM (i*) + PIM (DSL) diagrams (SVG canvas, dynamic palette/links per phase, node/edge sticky selection+delete, drag, phase-specific connect, label edit, custom aesthetics + rect/ellipse boundaries for containers, drag-to-group + auto parentId, visual cues). Parses/serializes draw.io XML (supports PIM nested parents on load). Live sync + keyed for phase switch in page; no raw XML, offline. Apply feeds back to process input. 
+  - Separate Diagram Editor screen: phase-aware reusable engine for CIM (i*) + PIM (DSL) diagrams (now modularized: lib/diagram for model+parse+utils, components/DiagramEditor/* for Toolbar/Sidebar/Canvas/Node/Handles + coordinator). SVG canvas, dynamic palette/links per phase, node/edge sticky selection+delete, drag, phase-specific connect, label edit, custom aesthetics + rect/ellipse boundaries for containers, drag-to-group + auto parentId, visual cues). Parses/serializes draw.io XML (supports PIM nested parents on load). Live sync + keyed for phase switch in page; no raw XML, offline. Apply feeds back to process input. 
 - Still demo-only (no real XSLT calls). Diagram Editor is now local/offline XML roundtrip helper (ideal for i* only, independent of external calls).
 - Next: real backend transforms, rule-driven forms, validation panel, per-component previews.
 
